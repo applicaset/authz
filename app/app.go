@@ -1,6 +1,6 @@
-// Package authzapp is the composition root of the authorization service running on its own. It is a
+// Package app is the composition root of the authorization service running on its own. It is a
 // package rather than a main so a test can build the routes without a listener.
-package authzapp
+package app
 
 import (
 	"context"
