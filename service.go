@@ -30,8 +30,8 @@ func (s *Service) Can(ctx context.Context, subject, action, resource string) (bo
 		return false, err
 	}
 
-	// A query may name a class of resource rather than one of them, which is how a caller asks
-	// "may this subject create posts at all" before any post exists.
+	// A query may name a class of resources, not one. That is how a caller asks "may this subject
+	// create posts at all" before any post exists.
 	if err := validateResourceQuery(resource); err != nil {
 		return false, err
 	}
@@ -164,8 +164,7 @@ func (s *Service) PurgeResource(ctx context.Context, resource string) error {
 	return nil
 }
 
-// The shape is checked without resolving it: malformed keys are how an authorization table quietly
-// stops matching.
+// The shape is checked, never resolved. A malformed key would be stored and silently never match.
 func validateSubject(subject string) error {
 	if err := ref.Validate(subject); err != nil {
 		return fmt.Errorf("subject: %w", err)

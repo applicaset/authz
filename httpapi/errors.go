@@ -8,8 +8,8 @@ import (
 )
 
 // Classify is the one place authz's errors become a wire code and a sentence for a visitor. Both
-// are reachable only through a malformed request, and untranslated they would render as an internal
-// error. The in-process adapter uses this too, so both topologies answer the same way.
+// errors come only from a malformed request. Untranslated, they would render as an internal error.
+// The in-process adapter uses this too, so both topologies answer the same way.
 func Classify(err error) (httpx.Code, string, bool) {
 	switch {
 	case err == nil:

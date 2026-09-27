@@ -9,8 +9,8 @@ import (
 	"github.com/Masterminds/squirrel"
 )
 
-// squirrel has no vocabulary for UNION, so the halves are built separately and joined here, which
-// keeps the arguments ordered and the placeholders numbered correctly.
+// squirrel cannot build a UNION. The halves are built separately and joined here, keeping the
+// arguments in order and the placeholders numbered correctly.
 func union(
 	ctx context.Context,
 	db squirrel.QueryerContext,

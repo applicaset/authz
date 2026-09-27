@@ -104,8 +104,8 @@ func TestCan(t *testing.T) {
 	assert.False(t, allowed.Allowed)
 }
 
-// An unknown role used to reach the site untranslated and render as an internal error, telling a
-// visitor the system had broken when their request had.
+// An unknown role is the request's fault, not the system's. It used to reach the site untranslated
+// and render as an internal error.
 func TestAssignRoleRejectsAnUnknownRole(t *testing.T) {
 	server := newServer(t)
 

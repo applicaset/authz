@@ -15,8 +15,8 @@ func TestRepository(t *testing.T) {
 	repotest.Run(t, func(t *testing.T) authz.Repository {
 		t.Helper()
 
-		// foreign_keys is off by default in SQLite, and rejecting an unknown role depends on it,
-		// so the test database is opened the same way the application opens its own.
+		// Opened with foreign_keys on, like the application's database. SQLite defaults it to off,
+		// and rejecting an unknown role depends on it.
 		db, err := sql.Open("sqlite", "file:"+t.TempDir()+"/test.db?_pragma=foreign_keys(ON)")
 		require.NoError(t, err)
 

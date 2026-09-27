@@ -31,7 +31,7 @@ func (c *Client) Can(ctx context.Context, subject, action, resource string) (boo
 		Resource: resource,
 	}, &response)
 	if err != nil {
-		// Never "allowed" on a failure. The caller decides what to do, but it is never this.
+		// A failure never reads as "allowed". The caller decides what to do instead.
 		return false, err
 	}
 

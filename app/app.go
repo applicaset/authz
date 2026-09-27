@@ -130,8 +130,8 @@ func Run(ctx context.Context) error {
 		Logger:          logger,
 		Routes:          service.Routes(),
 		Ready:           service.Ping,
-		// No browser reaches this service, so there is no cross-origin form to protect, and the
-		// callers are siblings whose request identifier is worth keeping.
+		// No browser reaches this service, so there is no cross-origin form to protect. Callers
+		// are sibling services, so their request identifier is kept.
 		CrossOrigin:    false,
 		TrustRequestID: true,
 	})
