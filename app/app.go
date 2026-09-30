@@ -4,15 +4,13 @@ package app
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log/slog"
 	"net/http"
 
 	"github.com/buildset/buildset/authz"
+	"github.com/buildset/buildset/authz/backend"
 	"github.com/buildset/buildset/authz/httpapi"
-	authzpostgres "github.com/buildset/buildset/authz/postgres"
-	authzsqlite "github.com/buildset/buildset/authz/sqlite"
 	"github.com/buildset/buildset/pkg/config"
 	"github.com/buildset/buildset/pkg/serve"
 	"github.com/buildset/buildset/pkg/storage"
@@ -56,26 +54,26 @@ func (c *Config) Validate(ctx context.Context) error {
 }
 
 type Service struct {
-	db     *sql.DB
+	handle *storage.Handle
 	routes http.Handler
 }
 
 func New(ctx context.Context, cfg *Config, logger *slog.Logger) (*Service, error) {
-	db, err := storage.Open(ctx, cfg.Database, schema)
+	handle, err := storage.OpenHandle(ctx, cfg.Database, schema)
 	if err != nil {
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	repository, err := newRepository(ctx, cfg.Database.Driver, db)
+	repository, err := backend.New(ctx, cfg.Database.Driver, handle)
 	if err != nil {
-		_ = db.Close()
+		_ = handle.Close()
 
 		return nil, fmt.Errorf("build authz repository: %w", err)
 	}
 
 	handler, err := httpapi.NewHandler(authz.NewService(repository), logger)
 	if err != nil {
-		_ = db.Close()
+		_ = handle.Close()
 
 		return nil, fmt.Errorf("build authz handler: %w", err)
 	}
@@ -83,26 +81,14 @@ func New(ctx context.Context, cfg *Config, logger *slog.Logger) (*Service, error
 	mux := http.NewServeMux()
 	handler.Register(mux)
 
-	return &Service{db: db, routes: mux}, nil
+	return &Service{handle: handle, routes: mux}, nil
 }
 
 func (s *Service) Routes() http.Handler { return s.routes }
 
-func (s *Service) Ping(ctx context.Context) error {
-	if err := s.db.PingContext(ctx); err != nil {
-		return fmt.Errorf("ping database: %w", err)
-	}
+func (s *Service) Ping(ctx context.Context) error { return s.handle.Ping(ctx) }
 
-	return nil
-}
-
-func (s *Service) Close() error {
-	if err := s.db.Close(); err != nil {
-		return fmt.Errorf("close database: %w", err)
-	}
-
-	return nil
-}
+func (s *Service) Close() error { return s.handle.Close() }
 
 func Run(ctx context.Context) error {
 	cfg, err := LoadConfig(ctx)
@@ -135,12 +121,4 @@ func Run(ctx context.Context) error {
 		CrossOrigin:    false,
 		TrustRequestID: true,
 	})
-}
-
-func newRepository(ctx context.Context, driver string, db *sql.DB) (authz.Repository, error) {
-	if driver == storage.DriverPostgres {
-		return authzpostgres.NewRepository(ctx, db)
-	}
-
-	return authzsqlite.NewRepository(ctx, db)
 }
