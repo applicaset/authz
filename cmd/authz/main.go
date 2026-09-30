@@ -1,8 +1,8 @@
 package main
 
 import (
-	authzapp "github.com/buildset/buildset/authz/app"
-	"github.com/buildset/buildset/pkg/serve"
+	authzapp "github.com/applicaset/buildset/authz/app"
+	"github.com/applicaset/buildset/pkg/serve"
 )
 
 func main() { serve.Main(authzapp.Run) }

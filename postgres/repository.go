@@ -9,8 +9,8 @@ import (
 	"fmt"
 
 	"github.com/Masterminds/squirrel"
-	"github.com/buildset/buildset/authz"
-	"github.com/buildset/buildset/pkg/sqlmigrate"
+	"github.com/applicaset/buildset/authz"
+	"github.com/applicaset/buildset/pkg/sqlmigrate"
 )
 
 //go:embed migrations/*.sql

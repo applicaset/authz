@@ -3,8 +3,8 @@ package httpapi
 import (
 	"errors"
 
-	"github.com/buildset/buildset/authz"
-	"github.com/buildset/buildset/pkg/httpx"
+	"github.com/applicaset/buildset/authz"
+	"github.com/applicaset/buildset/pkg/httpx"
 )
 
 // Classify is the one place authz's errors become a wire code and a sentence for a visitor. Both

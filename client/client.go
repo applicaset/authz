@@ -5,8 +5,8 @@ package client
 import (
 	"context"
 
-	"github.com/buildset/buildset/pkg/api/authzapi"
-	"github.com/buildset/buildset/pkg/httpx"
+	"github.com/applicaset/buildset/pkg/api/authzapi"
+	"github.com/applicaset/buildset/pkg/httpx"
 )
 
 type Client struct {
