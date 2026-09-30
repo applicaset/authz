@@ -31,10 +31,15 @@ func newServer(t *testing.T) *httptest.Server {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 
-	repository, err := sqlite.NewRepository(t.Context(), db)
-	require.NoError(t, err)
+	require.NoError(t, sqlite.Migrate(t.Context(), db))
 
-	handler, err := httpapi.NewHandler(authz.NewService(repository), slog.New(slog.DiscardHandler))
+	service := authz.NewService(
+		sqlite.NewRoleRepository(db),
+		sqlite.NewSubjectRoleRepository(db),
+		sqlite.NewGrantRepository(db),
+	)
+
+	handler, err := httpapi.NewHandler(service, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 
 	mux := http.NewServeMux()

@@ -31,10 +31,13 @@ func newService(t *testing.T) *authz.Service {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 
-	repository, err := authzsqlite.NewRepository(t.Context(), db)
-	require.NoError(t, err)
+	require.NoError(t, authzsqlite.Migrate(t.Context(), db))
 
-	return authz.NewService(repository)
+	return authz.NewService(
+		authzsqlite.NewRoleRepository(db),
+		authzsqlite.NewSubjectRoleRepository(db),
+		authzsqlite.NewGrantRepository(db),
+	)
 }
 
 func TestSeededRoles(t *testing.T) {

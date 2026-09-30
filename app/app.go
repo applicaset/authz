@@ -64,14 +64,16 @@ func New(ctx context.Context, cfg *Config, logger *slog.Logger) (*Service, error
 		return nil, fmt.Errorf("open database: %w", err)
 	}
 
-	repository, err := backend.New(ctx, cfg.Database.Driver, handle)
+	repos, err := backend.New(ctx, cfg.Database.Driver, handle)
 	if err != nil {
 		_ = handle.Close()
 
-		return nil, fmt.Errorf("build authz repository: %w", err)
+		return nil, fmt.Errorf("build authz repositories: %w", err)
 	}
 
-	handler, err := httpapi.NewHandler(authz.NewService(repository), logger)
+	service := authz.NewService(repos.Role, repos.SubjectRole, repos.Grant)
+
+	handler, err := httpapi.NewHandler(service, logger)
 	if err != nil {
 		_ = handle.Close()
 
@@ -84,11 +86,11 @@ func New(ctx context.Context, cfg *Config, logger *slog.Logger) (*Service, error
 	return &Service{handle: handle, routes: mux}, nil
 }
 
-func (s *Service) Routes() http.Handler { return s.routes }
+func (svc *Service) Routes() http.Handler { return svc.routes }
 
-func (s *Service) Ping(ctx context.Context) error { return s.handle.Ping(ctx) }
+func (svc *Service) Ping(ctx context.Context) error { return svc.handle.Ping(ctx) }
 
-func (s *Service) Close() error { return s.handle.Close() }
+func (svc *Service) Close() error { return svc.handle.Close() }
 
 func Run(ctx context.Context) error {
 	cfg, err := LoadConfig(ctx)

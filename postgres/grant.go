@@ -2,10 +2,12 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
 	"github.com/Masterminds/squirrel"
+	"github.com/applicaset/buildset/authz"
 )
 
 const tableGrants = "grants"
@@ -26,9 +28,19 @@ func grantColumns() []string {
 	}
 }
 
-// InsertGrants writes every action for one resource in a single transaction, so a caller granting
+type GrantRepository struct {
+	db *sql.DB
+}
+
+var _ authz.GrantRepository = (*GrantRepository)(nil)
+
+func NewGrantRepository(db *sql.DB) *GrantRepository {
+	return &GrantRepository{db: db}
+}
+
+// Insert writes every action for one resource in a single transaction, so a caller granting
 // ownership never ends up with half the actions.
-func (r *Repository) InsertGrants(
+func (r *GrantRepository) Insert(
 	ctx context.Context,
 	subject string,
 	actions []string,
@@ -67,7 +79,7 @@ func (r *Repository) InsertGrants(
 	return nil
 }
 
-func (r *Repository) DeleteByResource(ctx context.Context, resource string) error {
+func (r *GrantRepository) DeleteByResource(ctx context.Context, resource string) error {
 	_, err := builder().RunWith(r.db).
 		Delete(tableGrants).
 		Where(squirrel.Eq{grantColumnResourceRef: resource}).
@@ -77,4 +89,42 @@ func (r *Repository) DeleteByResource(ctx context.Context, resource string) erro
 	}
 
 	return nil
+}
+
+func (r *GrantRepository) ListBySubject(
+	ctx context.Context,
+	subject string,
+) ([]authz.Pattern, error) {
+	rows, err := builder().RunWith(r.db).
+		Select(grantColumnAction, grantColumnResourceRef).
+		From(tableGrants).
+		Where(squirrel.Eq{grantColumnSubjectRef: subject}).
+		QueryContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("select subject grants: %w", err)
+	}
+
+	return scanPatterns(rows)
+}
+
+func scanPatterns(rows *sql.Rows) ([]authz.Pattern, error) {
+	defer func() { _ = rows.Close() }()
+
+	patterns := make([]authz.Pattern, 0)
+
+	for rows.Next() {
+		var pattern authz.Pattern
+
+		if err := rows.Scan(&pattern.Action, &pattern.Resource); err != nil {
+			return nil, fmt.Errorf("scan pattern: %w", err)
+		}
+
+		patterns = append(patterns, pattern)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate patterns: %w", err)
+	}
+
+	return patterns, nil
 }

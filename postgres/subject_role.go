@@ -1,7 +1,8 @@
-package sqlite
+package postgres
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -21,50 +22,20 @@ func subjectRoleColumns() []string {
 	return []string{subjectRoleColumnSubjectRef, subjectRoleColumnRole, subjectRoleColumnGrantedAt}
 }
 
-// SubjectPatterns unions the subject's role permissions with its direct grants. Two queries would
-// cost a round trip and lose the deduplication UNION gives.
-func (r *Repository) SubjectPatterns(ctx context.Context, subject string) ([]authz.Pattern, error) {
-	roles := squirrel.
-		Select(
-			tableRolePermissions+"."+permissionColumnAction,
-			tableRolePermissions+"."+permissionColumnResourcePattern,
-		).
-		From(tableSubjectRoles).
-		Join(fmt.Sprintf("%[1]s ON %[1]s.%[2]s = %[3]s.%[4]s",
-			tableRolePermissions, permissionColumnRole, tableSubjectRoles, subjectRoleColumnRole)).
-		Where(squirrel.Eq{tableSubjectRoles + "." + subjectRoleColumnSubjectRef: subject})
-
-	grants := squirrel.
-		Select(grantColumnAction, grantColumnResourceRef).
-		From(tableGrants).
-		Where(squirrel.Eq{grantColumnSubjectRef: subject})
-
-	rows, err := union(ctx, r.db, placeholders, roles, grants)
-	if err != nil {
-		return nil, fmt.Errorf("select subject patterns: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	patterns := make([]authz.Pattern, 0)
-
-	for rows.Next() {
-		var pattern authz.Pattern
-
-		if err := rows.Scan(&pattern.Action, &pattern.Resource); err != nil {
-			return nil, fmt.Errorf("scan pattern: %w", err)
-		}
-
-		patterns = append(patterns, pattern)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate patterns: %w", err)
-	}
-
-	return patterns, nil
+type SubjectRoleRepository struct {
+	db *sql.DB
 }
 
-func (r *Repository) SubjectRoles(ctx context.Context, subject string) ([]string, error) {
+var _ authz.SubjectRoleRepository = (*SubjectRoleRepository)(nil)
+
+func NewSubjectRoleRepository(db *sql.DB) *SubjectRoleRepository {
+	return &SubjectRoleRepository{db: db}
+}
+
+func (r *SubjectRoleRepository) ListBySubject(
+	ctx context.Context,
+	subject string,
+) ([]string, error) {
 	rows, err := builder().RunWith(r.db).
 		Select(subjectRoleColumnRole).
 		From(tableSubjectRoles).
@@ -95,8 +66,8 @@ func (r *Repository) SubjectRoles(ctx context.Context, subject string) ([]string
 	return roles, nil
 }
 
-// InsertSubjectRole is idempotent, so assigning a role twice is not an error.
-func (r *Repository) InsertSubjectRole(
+// Insert is idempotent, so assigning a role twice is not an error.
+func (r *SubjectRoleRepository) Insert(
 	ctx context.Context,
 	subject, role string,
 	grantedAt time.Time,
@@ -104,7 +75,7 @@ func (r *Repository) InsertSubjectRole(
 	_, err := builder().RunWith(r.db).
 		Insert(tableSubjectRoles).
 		Columns(subjectRoleColumns()...).
-		Values(subject, role, formatTime(grantedAt)).
+		Values(subject, role, grantedAt).
 		Suffix(fmt.Sprintf("ON CONFLICT (%s, %s) DO NOTHING", subjectRoleColumnSubjectRef, subjectRoleColumnRole)).
 		ExecContext(ctx)
 	if err != nil {
@@ -118,7 +89,7 @@ func (r *Repository) InsertSubjectRole(
 	return nil
 }
 
-func (r *Repository) DeleteSubjectRole(ctx context.Context, subject, role string) error {
+func (r *SubjectRoleRepository) Delete(ctx context.Context, subject, role string) error {
 	_, err := builder().RunWith(r.db).
 		Delete(tableSubjectRoles).
 		Where(squirrel.Eq{subjectRoleColumnSubjectRef: subject, subjectRoleColumnRole: role}).
@@ -130,7 +101,7 @@ func (r *Repository) DeleteSubjectRole(ctx context.Context, subject, role string
 	return nil
 }
 
-func (r *Repository) DeleteBySubject(ctx context.Context, subject string) error {
+func (r *SubjectRoleRepository) DeleteBySubject(ctx context.Context, subject string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)

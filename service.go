@@ -10,18 +10,28 @@ import (
 )
 
 type Service struct {
-	repository Repository
+	roleRepo        RoleRepository
+	subjectRoleRepo SubjectRoleRepository
+	grantRepo       GrantRepository
 }
 
-func NewService(repository Repository) *Service {
-	return &Service{repository: repository}
+func NewService(
+	roleRepo RoleRepository,
+	subjectRoleRepo SubjectRoleRepository,
+	grantRepo GrantRepository,
+) *Service {
+	return &Service{
+		roleRepo:        roleRepo,
+		subjectRoleRepo: subjectRoleRepo,
+		grantRepo:       grantRepo,
+	}
 }
 
 // Can reports whether the subject holds a permission covering this action on this resource.
 //
 // TODO: every pattern a subject holds is loaded on each check. That is fine while a subject has
 // tens of grants; push matching into the backend before one can hold thousands.
-func (s *Service) Can(ctx context.Context, subject, action, resource string) (bool, error) {
+func (svc *Service) Can(ctx context.Context, subject, action, resource string) (bool, error) {
 	if err := validateSubject(subject); err != nil {
 		return false, err
 	}
@@ -36,16 +46,40 @@ func (s *Service) Can(ctx context.Context, subject, action, resource string) (bo
 		return false, err
 	}
 
-	patterns, err := s.repository.SubjectPatterns(ctx, subject)
+	patterns, err := svc.subjectPatterns(ctx, subject)
 	if err != nil {
-		return false, fmt.Errorf("load subject patterns: %w", err)
+		return false, err
 	}
 
 	return allows(patterns, action, resource), nil
 }
 
-func (s *Service) ListRoles(ctx context.Context) ([]Role, error) {
-	roles, err := s.repository.ListRoles(ctx)
+// subjectPatterns returns every permission a subject holds, from roles and direct grants alike.
+func (svc *Service) subjectPatterns(ctx context.Context, subject string) ([]Pattern, error) {
+	roles, err := svc.subjectRoleRepo.ListBySubject(ctx, subject)
+	if err != nil {
+		return nil, fmt.Errorf("list subject roles: %w", err)
+	}
+
+	patterns, err := svc.grantRepo.ListBySubject(ctx, subject)
+	if err != nil {
+		return nil, fmt.Errorf("list subject grants: %w", err)
+	}
+
+	if len(roles) == 0 {
+		return patterns, nil
+	}
+
+	permissions, err := svc.roleRepo.ListPermissions(ctx, roles)
+	if err != nil {
+		return nil, fmt.Errorf("list role permissions: %w", err)
+	}
+
+	return append(permissions, patterns...), nil
+}
+
+func (svc *Service) ListRoles(ctx context.Context) ([]Role, error) {
+	roles, err := svc.roleRepo.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list roles: %w", err)
 	}
@@ -53,12 +87,12 @@ func (s *Service) ListRoles(ctx context.Context) ([]Role, error) {
 	return roles, nil
 }
 
-func (s *Service) SubjectRoles(ctx context.Context, subject string) ([]string, error) {
+func (svc *Service) SubjectRoles(ctx context.Context, subject string) ([]string, error) {
 	if err := validateSubject(subject); err != nil {
 		return nil, err
 	}
 
-	roles, err := s.repository.SubjectRoles(ctx, subject)
+	roles, err := svc.subjectRoleRepo.ListBySubject(ctx, subject)
 	if err != nil {
 		return nil, fmt.Errorf("list subject roles: %w", err)
 	}
@@ -66,12 +100,12 @@ func (s *Service) SubjectRoles(ctx context.Context, subject string) ([]string, e
 	return roles, nil
 }
 
-func (s *Service) AssignRole(ctx context.Context, subject, role string) error {
+func (svc *Service) AssignRole(ctx context.Context, subject, role string) error {
 	if err := validateSubject(subject); err != nil {
 		return err
 	}
 
-	exists, err := s.repository.RoleExists(ctx, role)
+	exists, err := svc.roleRepo.Exists(ctx, role)
 	if err != nil {
 		return fmt.Errorf("check role: %w", err)
 	}
@@ -80,19 +114,24 @@ func (s *Service) AssignRole(ctx context.Context, subject, role string) error {
 		return fmt.Errorf("%w: %s", ErrUnknownRole, role)
 	}
 
-	if err := s.repository.InsertSubjectRole(ctx, subject, role, time.Now().UTC()); err != nil {
+	if err := svc.subjectRoleRepo.Insert(
+		ctx,
+		subject,
+		role,
+		time.Now().UTC(),
+	); err != nil {
 		return fmt.Errorf("assign role: %w", err)
 	}
 
 	return nil
 }
 
-func (s *Service) RevokeRole(ctx context.Context, subject, role string) error {
+func (svc *Service) RevokeRole(ctx context.Context, subject, role string) error {
 	if err := validateSubject(subject); err != nil {
 		return err
 	}
 
-	if err := s.repository.DeleteSubjectRole(ctx, subject, role); err != nil {
+	if err := svc.subjectRoleRepo.Delete(ctx, subject, role); err != nil {
 		return fmt.Errorf("revoke role: %w", err)
 	}
 
@@ -101,7 +140,7 @@ func (s *Service) RevokeRole(ctx context.Context, subject, role string) error {
 
 // Grant is how ownership is expressed: the service that creates a resource grants its creator the
 // actions over it.
-func (s *Service) Grant(
+func (svc *Service) Grant(
 	ctx context.Context,
 	subject string,
 	actions []string,
@@ -125,7 +164,7 @@ func (s *Service) Grant(
 		}
 	}
 
-	if err := s.repository.InsertGrants(
+	if err := svc.grantRepo.Insert(
 		ctx,
 		subject,
 		actions,
@@ -139,12 +178,12 @@ func (s *Service) Grant(
 }
 
 // PurgeSubject removes everything held by a subject, for when whatever it references is deleted.
-func (s *Service) PurgeSubject(ctx context.Context, subject string) error {
+func (svc *Service) PurgeSubject(ctx context.Context, subject string) error {
 	if err := validateSubject(subject); err != nil {
 		return err
 	}
 
-	if err := s.repository.DeleteBySubject(ctx, subject); err != nil {
+	if err := svc.subjectRoleRepo.DeleteBySubject(ctx, subject); err != nil {
 		return fmt.Errorf("purge subject: %w", err)
 	}
 
@@ -152,12 +191,12 @@ func (s *Service) PurgeSubject(ctx context.Context, subject string) error {
 }
 
 // PurgeResource removes every grant over a resource, for when that resource is deleted.
-func (s *Service) PurgeResource(ctx context.Context, resource string) error {
+func (svc *Service) PurgeResource(ctx context.Context, resource string) error {
 	if err := validateResource(resource); err != nil {
 		return err
 	}
 
-	if err := s.repository.DeleteByResource(ctx, resource); err != nil {
+	if err := svc.grantRepo.DeleteByResource(ctx, resource); err != nil {
 		return fmt.Errorf("purge resource: %w", err)
 	}
 

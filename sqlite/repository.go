@@ -1,5 +1,5 @@
-// Package sqlite stores authz's roles and grants in SQLite. It owns its schema and migrates
-// itself, so wiring authz to a different backend runs none of this.
+// Package sqlite stores authz's roles and grants in SQLite. It owns its schema, applied by
+// Migrate, so wiring authz to a different backend runs none of this.
 package sqlite
 
 import (
@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/Masterminds/squirrel"
-	"github.com/applicaset/buildset/authz"
 	"github.com/applicaset/buildset/pkg/sqlmigrate"
 	sqlitedriver "modernc.org/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
@@ -22,11 +21,7 @@ var migrations embed.FS
 
 const timeFormat = "2006-01-02T15:04:05.000Z"
 
-type Repository struct {
-	db *sql.DB
-}
-
-func NewRepository(ctx context.Context, db *sql.DB) (*Repository, error) {
+func Migrate(ctx context.Context, db *sql.DB) error {
 	runner := sqlmigrate.Runner{
 		FileSystem: migrations,
 		Directory:  "migrations",
@@ -34,10 +29,10 @@ func NewRepository(ctx context.Context, db *sql.DB) (*Repository, error) {
 	}
 
 	if err := runner.Up(ctx, db); err != nil {
-		return nil, fmt.Errorf("migrate authz schema: %w", err)
+		return fmt.Errorf("migrate authz schema: %w", err)
 	}
 
-	return &Repository{db: db}, nil
+	return nil
 }
 
 // placeholders is this backend's placeholder style, and the only place the dialect is named.
@@ -58,5 +53,3 @@ func isForeignKeyViolation(err error) bool {
 func formatTime(t time.Time) string {
 	return t.UTC().Format(timeFormat)
 }
-
-var _ authz.Repository = (*Repository)(nil)

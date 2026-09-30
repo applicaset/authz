@@ -3,7 +3,6 @@ package postgres_test
 import (
 	"testing"
 
-	"github.com/applicaset/buildset/authz"
 	"github.com/applicaset/buildset/authz/postgres"
 	"github.com/applicaset/buildset/authz/repotest"
 	"github.com/applicaset/buildset/pkg/pgtest"
@@ -13,12 +12,16 @@ import (
 func TestRepository(t *testing.T) {
 	dsn := pgtest.DSN(t)
 
-	repotest.Run(t, func(t *testing.T) authz.Repository {
+	repotest.Run(t, func(t *testing.T) repotest.Repositories {
 		t.Helper()
 
-		repository, err := postgres.NewRepository(t.Context(), pgtest.Open(t, dsn))
-		require.NoError(t, err)
+		db := pgtest.Open(t, dsn)
+		require.NoError(t, postgres.Migrate(t.Context(), db))
 
-		return repository
+		return repotest.Repositories{
+			Role:        postgres.NewRoleRepository(db),
+			SubjectRole: postgres.NewSubjectRoleRepository(db),
+			Grant:       postgres.NewGrantRepository(db),
+		}
 	})
 }

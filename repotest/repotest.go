@@ -1,4 +1,4 @@
-// Package repotest is the contract every authz.Repository must satisfy. Both backends run it, so a
+// Package repotest is the contract every authz repository must satisfy. Both backends run it, so a
 // behaviour that differs between SQLite and Postgres fails here rather than in production.
 package repotest
 
@@ -12,8 +12,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// New builds a repository over empty storage, already carrying the seeded roles.
-type New func(t *testing.T) authz.Repository
+type Repositories struct {
+	Role        authz.RoleRepository
+	SubjectRole authz.SubjectRoleRepository
+	Grant       authz.GrantRepository
+}
+
+// New builds repositories over empty storage, already carrying the seeded roles.
+type New func(t *testing.T) Repositories
 
 const (
 	alice = "urn:auth:user:alice"
@@ -21,15 +27,15 @@ const (
 )
 
 // Run exercises the whole contract.
-func Run(t *testing.T, newRepository New) {
+func Run(t *testing.T, newRepositories New) {
 	t.Helper()
 
 	now := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 
-	t.Run("ListRoles returns the seeded roles", func(t *testing.T) {
-		repository := newRepository(t)
+	t.Run("Role.List returns the seeded roles", func(t *testing.T) {
+		repos := newRepositories(t)
 
-		roles, err := repository.ListRoles(context.Background())
+		roles, err := repos.Role.List(context.Background())
 		require.NoError(t, err)
 
 		names := make([]string, 0, len(roles))
@@ -40,179 +46,63 @@ func Run(t *testing.T, newRepository New) {
 		assert.ElementsMatch(t, []string{"admin", "author", "reader"}, names)
 	})
 
-	t.Run("RoleExists distinguishes seeded from unknown", func(t *testing.T) {
-		repository := newRepository(t)
+	t.Run("Role.Exists distinguishes seeded from unknown", func(t *testing.T) {
+		repos := newRepositories(t)
 
-		exists, err := repository.RoleExists(context.Background(), "admin")
+		exists, err := repos.Role.Exists(context.Background(), "admin")
 		require.NoError(t, err)
 		assert.True(t, exists)
 
-		exists, err = repository.RoleExists(context.Background(), "wizard")
+		exists, err = repos.Role.Exists(context.Background(), "wizard")
 		require.NoError(t, err)
 		assert.False(t, exists)
 	})
 
-	t.Run("InsertSubjectRole rejects an unknown role", func(t *testing.T) {
-		repository := newRepository(t)
+	t.Run("SubjectRole.Insert rejects an unknown role", func(t *testing.T) {
+		repos := newRepositories(t)
 
-		err := repository.InsertSubjectRole(context.Background(), alice, "wizard", now)
+		err := repos.SubjectRole.Insert(context.Background(), alice, "wizard", now)
 		require.ErrorIs(t, err, authz.ErrUnknownRole)
 	})
 
-	t.Run("InsertSubjectRole is idempotent", func(t *testing.T) {
-		repository := newRepository(t)
+	t.Run("SubjectRole.Insert is idempotent", func(t *testing.T) {
+		repos := newRepositories(t)
 
-		require.NoError(t, repository.InsertSubjectRole(context.Background(), alice, "admin", now))
+		require.NoError(t, repos.SubjectRole.Insert(context.Background(), alice, "admin", now))
 		require.NoError(
 			t,
-			repository.InsertSubjectRole(context.Background(), alice, "admin", now.Add(time.Hour)),
+			repos.SubjectRole.Insert(context.Background(), alice, "admin", now.Add(time.Hour)),
 		)
 
-		roles, err := repository.SubjectRoles(context.Background(), alice)
+		roles, err := repos.SubjectRole.ListBySubject(context.Background(), alice)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"admin"}, roles)
 	})
 
-	t.Run("SubjectRoles is empty for an unknown subject", func(t *testing.T) {
-		repository := newRepository(t)
+	t.Run("SubjectRole.ListBySubject is empty for an unknown subject", func(t *testing.T) {
+		repos := newRepositories(t)
 
-		roles, err := repository.SubjectRoles(context.Background(), "urn:auth:user:nobody")
+		roles, err := repos.SubjectRole.ListBySubject(context.Background(), "urn:auth:user:nobody")
 		require.NoError(t, err)
 		assert.Empty(t, roles)
 	})
 
-	t.Run("DeleteSubjectRole removes one role", func(t *testing.T) {
-		repository := newRepository(t)
+	t.Run("SubjectRole.Delete removes one role", func(t *testing.T) {
+		repos := newRepositories(t)
 
-		require.NoError(t, repository.InsertSubjectRole(context.Background(), alice, "admin", now))
-		require.NoError(t, repository.InsertSubjectRole(context.Background(), alice, "author", now))
-		require.NoError(t, repository.DeleteSubjectRole(context.Background(), alice, "admin"))
+		require.NoError(t, repos.SubjectRole.Insert(context.Background(), alice, "admin", now))
+		require.NoError(t, repos.SubjectRole.Insert(context.Background(), alice, "author", now))
+		require.NoError(t, repos.SubjectRole.Delete(context.Background(), alice, "admin"))
 
-		roles, err := repository.SubjectRoles(context.Background(), alice)
+		roles, err := repos.SubjectRole.ListBySubject(context.Background(), alice)
 		require.NoError(t, err)
 		assert.Equal(t, []string{"author"}, roles)
 	})
 
-	t.Run("SubjectPatterns unions role permissions and direct grants", func(t *testing.T) {
-		repository := newRepository(t)
+	t.Run("Role.ListPermissions returns the permissions of the named roles", func(t *testing.T) {
+		repos := newRepositories(t)
 
-		require.NoError(t, repository.InsertSubjectRole(context.Background(), alice, "author", now))
-		require.NoError(
-			t,
-			repository.InsertGrants(
-				context.Background(),
-				alice,
-				[]string{"post.update", "post.delete"},
-				post,
-				now,
-			),
-		)
-
-		patterns, err := repository.SubjectPatterns(context.Background(), alice)
-		require.NoError(t, err)
-
-		assert.ElementsMatch(t, []authz.Pattern{
-			{Action: "post.create", Resource: "urn:content:post:*"},
-			{Action: "post.update", Resource: post},
-			{Action: "post.delete", Resource: post},
-		}, patterns)
-	})
-
-	t.Run("SubjectPatterns is empty for an unknown subject", func(t *testing.T) {
-		repository := newRepository(t)
-
-		patterns, err := repository.SubjectPatterns(context.Background(), "urn:auth:user:nobody")
-		require.NoError(t, err)
-		assert.Empty(t, patterns)
-	})
-
-	t.Run("InsertGrants is idempotent", func(t *testing.T) {
-		repository := newRepository(t)
-
-		require.NoError(
-			t,
-			repository.InsertGrants(
-				context.Background(),
-				alice,
-				[]string{"post.update"},
-				post,
-				now,
-			),
-		)
-		require.NoError(
-			t,
-			repository.InsertGrants(
-				context.Background(),
-				alice,
-				[]string{"post.update"},
-				post,
-				now.Add(time.Hour),
-			),
-		)
-
-		patterns, err := repository.SubjectPatterns(context.Background(), alice)
-		require.NoError(t, err)
-		assert.Len(t, patterns, 1)
-	})
-
-	t.Run("InsertGrants with no actions writes nothing", func(t *testing.T) {
-		repository := newRepository(t)
-
-		require.NoError(t, repository.InsertGrants(context.Background(), alice, nil, post, now))
-
-		patterns, err := repository.SubjectPatterns(context.Background(), alice)
-		require.NoError(t, err)
-		assert.Empty(t, patterns)
-	})
-
-	t.Run("DeleteBySubject removes roles and grants together", func(t *testing.T) {
-		repository := newRepository(t)
-
-		require.NoError(t, repository.InsertSubjectRole(context.Background(), alice, "author", now))
-		require.NoError(
-			t,
-			repository.InsertGrants(
-				context.Background(),
-				alice,
-				[]string{"post.update"},
-				post,
-				now,
-			),
-		)
-
-		require.NoError(t, repository.DeleteBySubject(context.Background(), alice))
-
-		roles, err := repository.SubjectRoles(context.Background(), alice)
-		require.NoError(t, err)
-		assert.Empty(t, roles)
-
-		patterns, err := repository.SubjectPatterns(context.Background(), alice)
-		require.NoError(t, err)
-		assert.Empty(t, patterns)
-	})
-
-	t.Run("DeleteByResource removes grants and leaves roles", func(t *testing.T) {
-		repository := newRepository(t)
-
-		require.NoError(t, repository.InsertSubjectRole(context.Background(), alice, "author", now))
-		require.NoError(
-			t,
-			repository.InsertGrants(
-				context.Background(),
-				alice,
-				[]string{"post.update"},
-				post,
-				now,
-			),
-		)
-
-		require.NoError(t, repository.DeleteByResource(context.Background(), post))
-
-		roles, err := repository.SubjectRoles(context.Background(), alice)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"author"}, roles)
-
-		patterns, err := repository.SubjectPatterns(context.Background(), alice)
+		patterns, err := repos.Role.ListPermissions(context.Background(), []string{"author"})
 		require.NoError(t, err)
 		assert.Equal(
 			t,
@@ -221,14 +111,150 @@ func Run(t *testing.T, newRepository New) {
 		)
 	})
 
-	t.Run("deleting an absent subject or resource is quiet", func(t *testing.T) {
-		repository := newRepository(t)
+	t.Run("Role.ListPermissions is empty for no or unknown roles", func(t *testing.T) {
+		repos := newRepositories(t)
 
-		require.NoError(t, repository.DeleteBySubject(context.Background(), "urn:auth:user:nobody"))
+		for _, roles := range [][]string{nil, {"reader"}, {"wizard"}} {
+			patterns, err := repos.Role.ListPermissions(context.Background(), roles)
+			require.NoError(t, err)
+			assert.Empty(t, patterns)
+		}
+	})
+
+	t.Run("Grant.ListBySubject returns direct grants only", func(t *testing.T) {
+		repos := newRepositories(t)
+
+		require.NoError(t, repos.SubjectRole.Insert(context.Background(), alice, "author", now))
 		require.NoError(
 			t,
-			repository.DeleteByResource(context.Background(), "urn:content:post:nothing"),
+			repos.Grant.Insert(
+				context.Background(),
+				alice,
+				[]string{"post.update", "post.delete"},
+				post,
+				now,
+			),
 		)
-		require.NoError(t, repository.DeleteSubjectRole(context.Background(), alice, "admin"))
+
+		patterns, err := repos.Grant.ListBySubject(context.Background(), alice)
+		require.NoError(t, err)
+
+		assert.ElementsMatch(t, []authz.Pattern{
+			{Action: "post.update", Resource: post},
+			{Action: "post.delete", Resource: post},
+		}, patterns)
+	})
+
+	t.Run("Grant.ListBySubject is empty for an unknown subject", func(t *testing.T) {
+		repos := newRepositories(t)
+
+		patterns, err := repos.Grant.ListBySubject(context.Background(), "urn:auth:user:nobody")
+		require.NoError(t, err)
+		assert.Empty(t, patterns)
+	})
+
+	t.Run("Grant.Insert is idempotent", func(t *testing.T) {
+		repos := newRepositories(t)
+
+		require.NoError(
+			t,
+			repos.Grant.Insert(
+				context.Background(),
+				alice,
+				[]string{"post.update"},
+				post,
+				now,
+			),
+		)
+		require.NoError(
+			t,
+			repos.Grant.Insert(
+				context.Background(),
+				alice,
+				[]string{"post.update"},
+				post,
+				now.Add(time.Hour),
+			),
+		)
+
+		patterns, err := repos.Grant.ListBySubject(context.Background(), alice)
+		require.NoError(t, err)
+		assert.Len(t, patterns, 1)
+	})
+
+	t.Run("Grant.Insert with no actions writes nothing", func(t *testing.T) {
+		repos := newRepositories(t)
+
+		require.NoError(t, repos.Grant.Insert(context.Background(), alice, nil, post, now))
+
+		patterns, err := repos.Grant.ListBySubject(context.Background(), alice)
+		require.NoError(t, err)
+		assert.Empty(t, patterns)
+	})
+
+	t.Run("SubjectRole.DeleteBySubject removes roles and grants together", func(t *testing.T) {
+		repos := newRepositories(t)
+
+		require.NoError(t, repos.SubjectRole.Insert(context.Background(), alice, "author", now))
+		require.NoError(
+			t,
+			repos.Grant.Insert(
+				context.Background(),
+				alice,
+				[]string{"post.update"},
+				post,
+				now,
+			),
+		)
+
+		require.NoError(t, repos.SubjectRole.DeleteBySubject(context.Background(), alice))
+
+		roles, err := repos.SubjectRole.ListBySubject(context.Background(), alice)
+		require.NoError(t, err)
+		assert.Empty(t, roles)
+
+		patterns, err := repos.Grant.ListBySubject(context.Background(), alice)
+		require.NoError(t, err)
+		assert.Empty(t, patterns)
+	})
+
+	t.Run("Grant.DeleteByResource removes grants and leaves roles", func(t *testing.T) {
+		repos := newRepositories(t)
+
+		require.NoError(t, repos.SubjectRole.Insert(context.Background(), alice, "author", now))
+		require.NoError(
+			t,
+			repos.Grant.Insert(
+				context.Background(),
+				alice,
+				[]string{"post.update"},
+				post,
+				now,
+			),
+		)
+
+		require.NoError(t, repos.Grant.DeleteByResource(context.Background(), post))
+
+		roles, err := repos.SubjectRole.ListBySubject(context.Background(), alice)
+		require.NoError(t, err)
+		assert.Equal(t, []string{"author"}, roles)
+
+		patterns, err := repos.Grant.ListBySubject(context.Background(), alice)
+		require.NoError(t, err)
+		assert.Empty(t, patterns)
+	})
+
+	t.Run("deleting an absent subject or resource is quiet", func(t *testing.T) {
+		repos := newRepositories(t)
+
+		require.NoError(
+			t,
+			repos.SubjectRole.DeleteBySubject(context.Background(), "urn:auth:user:nobody"),
+		)
+		require.NoError(
+			t,
+			repos.Grant.DeleteByResource(context.Background(), "urn:content:post:nothing"),
+		)
+		require.NoError(t, repos.SubjectRole.Delete(context.Background(), alice, "admin"))
 	})
 }

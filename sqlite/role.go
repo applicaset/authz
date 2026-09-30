@@ -28,7 +28,17 @@ func roleColumns() []string {
 	return []string{roleColumnName, roleColumnDescription}
 }
 
-func (r *Repository) ListRoles(ctx context.Context) ([]authz.Role, error) {
+type RoleRepository struct {
+	db *sql.DB
+}
+
+var _ authz.RoleRepository = (*RoleRepository)(nil)
+
+func NewRoleRepository(db *sql.DB) *RoleRepository {
+	return &RoleRepository{db: db}
+}
+
+func (r *RoleRepository) List(ctx context.Context) ([]authz.Role, error) {
 	rows, err := builder().RunWith(r.db).
 		Select(roleColumns()...).
 		From(tableRoles).
@@ -58,7 +68,7 @@ func (r *Repository) ListRoles(ctx context.Context) ([]authz.Role, error) {
 	return roles, nil
 }
 
-func (r *Repository) RoleExists(ctx context.Context, role string) (bool, error) {
+func (r *RoleRepository) Exists(ctx context.Context, role string) (bool, error) {
 	var exists int
 
 	err := builder().RunWith(r.db).
@@ -77,4 +87,20 @@ func (r *Repository) RoleExists(ctx context.Context, role string) (bool, error) 
 	}
 
 	return true, nil
+}
+
+func (r *RoleRepository) ListPermissions(
+	ctx context.Context,
+	roles []string,
+) ([]authz.Pattern, error) {
+	rows, err := builder().RunWith(r.db).
+		Select(permissionColumnAction, permissionColumnResourcePattern).
+		From(tableRolePermissions).
+		Where(squirrel.Eq{permissionColumnRole: roles}).
+		QueryContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("select role permissions: %w", err)
+	}
+
+	return scanPatterns(rows)
 }

@@ -1,5 +1,5 @@
-// Package postgres stores authz's roles and grants in Postgres. It owns its schema and migrates
-// itself, so wiring authz to a different backend runs none of this.
+// Package postgres stores authz's roles and grants in Postgres. It owns its schema, applied by
+// Migrate, so wiring authz to a different backend runs none of this.
 package postgres
 
 import (
@@ -9,18 +9,13 @@ import (
 	"fmt"
 
 	"github.com/Masterminds/squirrel"
-	"github.com/applicaset/buildset/authz"
 	"github.com/applicaset/buildset/pkg/sqlmigrate"
 )
 
 //go:embed migrations/*.sql
 var migrations embed.FS
 
-type Repository struct {
-	db *sql.DB
-}
-
-func NewRepository(ctx context.Context, db *sql.DB) (*Repository, error) {
+func Migrate(ctx context.Context, db *sql.DB) error {
 	runner := sqlmigrate.Runner{
 		FileSystem: migrations,
 		Directory:  "migrations",
@@ -29,10 +24,10 @@ func NewRepository(ctx context.Context, db *sql.DB) (*Repository, error) {
 	}
 
 	if err := runner.Up(ctx, db); err != nil {
-		return nil, fmt.Errorf("migrate authz schema: %w", err)
+		return fmt.Errorf("migrate authz schema: %w", err)
 	}
 
-	return &Repository{db: db}, nil
+	return nil
 }
 
 // placeholders is this package's placeholder style, and the only place the dialect is named.
@@ -41,5 +36,3 @@ var placeholders squirrel.PlaceholderFormat = squirrel.Dollar
 func builder() squirrel.StatementBuilderType {
 	return squirrel.StatementBuilder.PlaceholderFormat(placeholders)
 }
-
-var _ authz.Repository = (*Repository)(nil)
