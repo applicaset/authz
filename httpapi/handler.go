@@ -39,6 +39,7 @@ func (h *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("POST "+authzapi.PathRevokeRole, h.revokeRole)
 	mux.HandleFunc("POST "+authzapi.PathSubjectRoles, h.subjectRoles)
 	mux.HandleFunc("POST "+authzapi.PathListRoles, h.listRoles)
+	mux.HandleFunc("POST "+authzapi.PathDefineRole, h.defineRole)
 	mux.HandleFunc("POST "+authzapi.PathPurgeResource, h.purgeResource)
 	mux.HandleFunc("POST "+authzapi.PathPurgeSubject, h.purgeSubject)
 }
@@ -127,6 +128,27 @@ func (h *Handler) listRoles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	httpx.WriteJSON(w, authzapi.RolesResponse{Roles: names})
+}
+
+func (h *Handler) defineRole(w http.ResponseWriter, r *http.Request) {
+	var request authzapi.DefineRoleRequest
+	if !httpx.DecodeJSON(w, r, &request) {
+		return
+	}
+
+	permissions := make([]authz.Pattern, 0, len(request.Permissions))
+	for _, permission := range request.Permissions {
+		permissions = append(permissions, authz.Pattern{
+			Action:   permission.Action,
+			Resource: permission.Resource,
+		})
+	}
+
+	h.void(w, r, "define role", h.service.DefineRole(
+		r.Context(),
+		authz.Role{Name: request.Name, Description: request.Description},
+		permissions,
+	))
 }
 
 func (h *Handler) purgeResource(w http.ResponseWriter, r *http.Request) {

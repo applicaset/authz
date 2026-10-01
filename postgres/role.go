@@ -104,3 +104,54 @@ func (r *RoleRepository) ListPermissions(
 
 	return scanPatterns(rows)
 }
+
+func (r *RoleRepository) Define(
+	ctx context.Context,
+	role authz.Role,
+	permissions []authz.Pattern,
+) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = builder().RunWith(tx).
+		Insert(tableRoles).
+		Columns(roleColumns()...).
+		Values(role.Name, role.Description).
+		Suffix(fmt.Sprintf("ON CONFLICT (%s) DO UPDATE SET %s = excluded.%s",
+			roleColumnName, roleColumnDescription, roleColumnDescription)).
+		ExecContext(ctx)
+	if err != nil {
+		return fmt.Errorf("upsert role: %w", err)
+	}
+
+	_, err = builder().RunWith(tx).
+		Delete(tableRolePermissions).
+		Where(squirrel.Eq{permissionColumnRole: role.Name}).
+		ExecContext(ctx)
+	if err != nil {
+		return fmt.Errorf("delete role permissions: %w", err)
+	}
+
+	if len(permissions) > 0 {
+		insert := builder().RunWith(tx).
+			Insert(tableRolePermissions).
+			Columns(permissionColumnRole, permissionColumnAction, permissionColumnResourcePattern)
+
+		for _, permission := range permissions {
+			insert = insert.Values(role.Name, permission.Action, permission.Resource)
+		}
+
+		if _, err := insert.ExecContext(ctx); err != nil {
+			return fmt.Errorf("insert role permissions: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit transaction: %w", err)
+	}
+
+	return nil
+}

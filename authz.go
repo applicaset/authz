@@ -8,4 +8,5 @@ import "errors"
 var (
 	ErrUnknownRole   = errors.New("unknown role")
 	ErrInvalidAction = errors.New("invalid action")
+	ErrInvalidRole   = errors.New("invalid role")
 )

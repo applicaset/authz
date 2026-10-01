@@ -160,3 +160,58 @@ func TestRejectsMalformedInput(t *testing.T) {
 
 	require.ErrorIs(t, service.AssignRole(ctx, adminRef, "superuser"), authz.ErrUnknownRole)
 }
+
+func TestServiceDefinesItsOwnRole(t *testing.T) {
+	service := newService(t)
+	ctx := t.Context()
+
+	biller := authz.Role{Name: "billing.biller", Description: "May charge others"}
+	charge := authz.Pattern{Action: "billing.charge", Resource: "urn:billing:charge:*"}
+
+	require.NoError(t, service.DefineRole(ctx, biller, []authz.Pattern{charge, charge}))
+	require.NoError(t, service.DefineRole(ctx, biller, []authz.Pattern{charge}), "idempotent")
+	require.NoError(t, service.AssignRole(ctx, authorRef, biller.Name))
+
+	allowed, err := service.Can(ctx, authorRef, "billing.charge", "urn:billing:charge:*")
+	require.NoError(t, err)
+	assert.True(t, allowed)
+
+	allowed, err = service.Can(ctx, readerRef, "billing.charge", "urn:billing:charge:*")
+	require.NoError(t, err)
+	assert.False(t, allowed)
+}
+
+func TestDefineRoleStaysInsideItsService(t *testing.T) {
+	service := newService(t)
+	own := authz.Pattern{Action: "billing.charge", Resource: "urn:billing:charge:*"}
+	require.NoError(t, service.AssignRole(t.Context(), authorRef, "author"))
+
+	for name, tc := range map[string]struct {
+		role        string
+		permissions []authz.Pattern
+	}{
+		"a seeded role":          {"admin", []authz.Pattern{own}},
+		"a name with no service": {"biller", []authz.Pattern{own}},
+		"an empty role name":     {"billing.", []authz.Pattern{own}},
+		"no permissions":         {"billing.biller", nil},
+		"another service's action": {"billing.biller", []authz.Pattern{
+			{Action: "post.create", Resource: "urn:billing:charge:*"},
+		}},
+		"another service's resource": {"billing.biller", []authz.Pattern{
+			{Action: "billing.charge", Resource: "urn:content:post:*"},
+		}},
+		"every action": {"billing.biller", []authz.Pattern{
+			{Action: "*", Resource: "urn:billing:charge:*"},
+		}},
+		"every resource": {"billing.biller", []authz.Pattern{
+			{Action: "billing.charge", Resource: "*"},
+		}},
+	} {
+		err := service.DefineRole(t.Context(), authz.Role{Name: tc.role}, tc.permissions)
+		require.Error(t, err, name)
+	}
+
+	allowed, err := service.Can(t.Context(), authorRef, "post.create", "urn:content:post:*")
+	require.NoError(t, err)
+	assert.True(t, allowed, "the seeded author role is untouched")
+}

@@ -3,6 +3,7 @@ package authz
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -133,6 +134,65 @@ func (svc *Service) RevokeRole(ctx context.Context, subject, role string) error 
 
 	if err := svc.subjectRoleRepo.Delete(ctx, subject, role); err != nil {
 		return fmt.Errorf("revoke role: %w", err)
+	}
+
+	return nil
+}
+
+// DefineRole creates a role, or replaces its description and permissions. A service defines the
+// roles its own actions need when it starts. The name is "<service>.<role>", and every permission
+// must name an action and resources of that service. A service then cannot widen another's role,
+// nor touch the roles seeded here, whose names carry no service.
+func (svc *Service) DefineRole(ctx context.Context, role Role, permissions []Pattern) error {
+	service, name, found := strings.Cut(role.Name, ".")
+	if !found || name == "" {
+		return fmt.Errorf("%w: %q is not <service>.<role>", ErrInvalidRole, role.Name)
+	}
+
+	if err := validateAction(role.Name); err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidRole, err)
+	}
+
+	if len(permissions) == 0 {
+		return fmt.Errorf("%w: %s has no permissions", ErrInvalidRole, role.Name)
+	}
+
+	unique := make([]Pattern, 0, len(permissions))
+
+	for _, permission := range permissions {
+		if !strings.HasPrefix(permission.Action, service+".") {
+			return fmt.Errorf(
+				"%w: action %q is not one of %s's",
+				ErrInvalidRole,
+				permission.Action,
+				service,
+			)
+		}
+
+		if err := validateAction(permission.Action); err != nil {
+			return err
+		}
+
+		if !strings.HasPrefix(permission.Resource, "urn:"+service+":") {
+			return fmt.Errorf(
+				"%w: resource %q is not one of %s's",
+				ErrInvalidRole,
+				permission.Resource,
+				service,
+			)
+		}
+
+		if err := validateResourceQuery(permission.Resource); err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidRole, err)
+		}
+
+		if !slices.Contains(unique, permission) {
+			unique = append(unique, permission)
+		}
+	}
+
+	if err := svc.roleRepo.Define(ctx, role, unique); err != nil {
+		return fmt.Errorf("define role %s: %w", role.Name, err)
 	}
 
 	return nil

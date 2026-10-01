@@ -257,4 +257,51 @@ func Run(t *testing.T, newRepositories New) {
 		)
 		require.NoError(t, repos.SubjectRole.Delete(context.Background(), alice, "admin"))
 	})
+
+	t.Run("Role.Define creates a role, then replaces its permissions", func(t *testing.T) {
+		repos := newRepositories(t)
+		ctx := context.Background()
+
+		role := authz.Role{Name: "billing.biller", Description: "May charge"}
+		first := []authz.Pattern{
+			{Action: "billing.charge", Resource: "urn:billing:charge:*"},
+			{Action: "billing.post", Resource: "urn:billing:charge:*"},
+		}
+		require.NoError(t, repos.Role.Define(ctx, role, first))
+
+		exists, err := repos.Role.Exists(ctx, role.Name)
+		require.NoError(t, err)
+		assert.True(t, exists)
+
+		patterns, err := repos.Role.ListPermissions(ctx, []string{role.Name})
+		require.NoError(t, err)
+		assert.ElementsMatch(t, first, patterns)
+
+		second := []authz.Pattern{{Action: "billing.charge", Resource: "urn:billing:charge:*"}}
+		role.Description = "May charge others"
+		require.NoError(t, repos.Role.Define(ctx, role, second))
+
+		patterns, err = repos.Role.ListPermissions(ctx, []string{role.Name})
+		require.NoError(t, err)
+		assert.Equal(t, second, patterns)
+
+		roles, err := repos.Role.List(ctx)
+		require.NoError(t, err)
+		assert.Contains(t, roles, role)
+	})
+
+	t.Run("Role.Define keeps the role's holders", func(t *testing.T) {
+		repos := newRepositories(t)
+		ctx := context.Background()
+
+		role := authz.Role{Name: "billing.biller"}
+		permissions := []authz.Pattern{{Action: "billing.charge", Resource: "urn:billing:charge:*"}}
+		require.NoError(t, repos.Role.Define(ctx, role, permissions))
+		require.NoError(t, repos.SubjectRole.Insert(ctx, alice, role.Name, now))
+		require.NoError(t, repos.Role.Define(ctx, role, permissions))
+
+		roles, err := repos.SubjectRole.ListBySubject(ctx, alice)
+		require.NoError(t, err)
+		assert.Equal(t, []string{role.Name}, roles)
+	})
 }

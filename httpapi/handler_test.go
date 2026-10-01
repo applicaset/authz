@@ -199,3 +199,37 @@ func TestUnreadableBodyIsTheCallersFault(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, response.StatusCode)
 }
+
+func TestDefineRoleThenAssignIt(t *testing.T) {
+	server := newServer(t)
+
+	charge := authzapi.Permission{Action: "billing.charge", Resource: "urn:billing:charge:*"}
+
+	status, _ := post(t, server, authzapi.PathDefineRole, authzapi.DefineRoleRequest{
+		Name: "billing.biller", Description: "May charge others",
+		Permissions: []authzapi.Permission{charge},
+	})
+	require.Equal(t, http.StatusOK, status)
+
+	status, _ = post(t, server, authzapi.PathAssignRole,
+		authzapi.RoleRequest{Subject: alice, Role: "billing.biller"})
+	require.Equal(t, http.StatusOK, status)
+
+	status, body := post(t, server, authzapi.PathCan, authzapi.CanRequest{
+		Subject: alice, Action: charge.Action, Resource: charge.Resource,
+	})
+	require.Equal(t, http.StatusOK, status)
+
+	var allowed authzapi.CanResponse
+	require.NoError(t, json.Unmarshal(body, &allowed))
+	assert.True(t, allowed.Allowed)
+
+	status, body = post(t, server, authzapi.PathDefineRole, authzapi.DefineRoleRequest{
+		Name: "admin", Permissions: []authzapi.Permission{charge},
+	})
+	assert.Equal(t, http.StatusBadRequest, status, "a seeded role cannot be redefined")
+
+	var envelope httpx.Envelope
+	require.NoError(t, json.Unmarshal(body, &envelope))
+	assert.Equal(t, httpx.CodeInvalidInput, envelope.Code)
+}

@@ -16,7 +16,7 @@ func Classify(err error) (httpx.Code, string, bool) {
 		return "", "", false
 	case errors.Is(err, authz.ErrUnknownRole):
 		return httpx.CodeInvalidInput, "That role does not exist.", true
-	case errors.Is(err, authz.ErrInvalidAction):
+	case errors.Is(err, authz.ErrInvalidAction), errors.Is(err, authz.ErrInvalidRole):
 		return httpx.CodeInvalidInput, err.Error(), true
 	default:
 		return "", "", false

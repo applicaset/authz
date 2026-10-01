@@ -60,6 +60,10 @@ func (c *Client) AssignRole(ctx context.Context, subject, role string) error {
 	)
 }
 
+func (c *Client) DefineRole(ctx context.Context, request authzapi.DefineRoleRequest) error {
+	return c.call.Call(ctx, authzapi.PathDefineRole, request, nil)
+}
+
 func (c *Client) RevokeRole(ctx context.Context, subject, role string) error {
 	return c.call.Call(
 		ctx,
