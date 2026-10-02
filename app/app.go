@@ -8,12 +8,12 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/applicaset/buildset/authz"
-	"github.com/applicaset/buildset/authz/backend"
-	"github.com/applicaset/buildset/authz/httpapi"
-	"github.com/applicaset/buildset/pkg/config"
-	"github.com/applicaset/buildset/pkg/serve"
-	"github.com/applicaset/buildset/pkg/storage"
+	"github.com/applicaset/authz"
+	"github.com/applicaset/authz/backend"
+	"github.com/applicaset/authz/httpapi"
+	"github.com/applicaset/pkg/config"
+	"github.com/applicaset/pkg/serve"
+	"github.com/applicaset/pkg/storage"
 )
 
 // schema is the Postgres schema this service owns. SQLite ignores it.

@@ -7,7 +7,7 @@ import (
 	"fmt"
 
 	"github.com/Masterminds/squirrel"
-	"github.com/applicaset/buildset/authz"
+	"github.com/applicaset/authz"
 )
 
 const (

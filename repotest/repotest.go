@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/applicaset/buildset/authz"
+	"github.com/applicaset/authz"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

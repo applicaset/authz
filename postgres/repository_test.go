@@ -3,9 +3,9 @@ package postgres_test
 import (
 	"testing"
 
-	"github.com/applicaset/buildset/authz/postgres"
-	"github.com/applicaset/buildset/authz/repotest"
-	"github.com/applicaset/buildset/pkg/pgtest"
+	"github.com/applicaset/authz/postgres"
+	"github.com/applicaset/authz/repotest"
+	"github.com/applicaset/pkg/pgtest"
 	"github.com/stretchr/testify/require"
 )
 

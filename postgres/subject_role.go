@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/squirrel"
-	"github.com/applicaset/buildset/authz"
+	"github.com/applicaset/authz"
 )
 
 const tableSubjectRoles = "subject_roles"
