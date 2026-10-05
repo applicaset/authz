@@ -29,12 +29,27 @@ func NewService(
 }
 
 // Can reports whether the subject holds a permission covering this action on this resource.
+func (svc *Service) Can(ctx context.Context, subject, action, resource string) (bool, error) {
+	return svc.CanWithGroups(ctx, subject, nil, action, resource)
+}
+
+// CanWithGroups is Can for a subject that also holds what its groups hold. Membership is the
+// caller's word: this service keeps no groups.
 //
 // TODO: every pattern a subject holds is loaded on each check. That is fine while a subject has
 // tens of grants; push matching into the backend before one can hold thousands.
-func (svc *Service) Can(ctx context.Context, subject, action, resource string) (bool, error) {
-	if err := validateSubject(subject); err != nil {
-		return false, err
+func (svc *Service) CanWithGroups(
+	ctx context.Context,
+	subject string,
+	groups []string,
+	action, resource string,
+) (bool, error) {
+	subjects := append([]string{subject}, groups...)
+
+	for _, s := range subjects {
+		if err := validateSubject(s); err != nil {
+			return false, err
+		}
 	}
 
 	if err := validateAction(action); err != nil {
@@ -47,12 +62,18 @@ func (svc *Service) Can(ctx context.Context, subject, action, resource string) (
 		return false, err
 	}
 
-	patterns, err := svc.subjectPatterns(ctx, subject)
-	if err != nil {
-		return false, err
+	for _, s := range subjects {
+		patterns, err := svc.subjectPatterns(ctx, s)
+		if err != nil {
+			return false, err
+		}
+
+		if allows(patterns, action, resource) {
+			return true, nil
+		}
 	}
 
-	return allows(patterns, action, resource), nil
+	return false, nil
 }
 
 // subjectPatterns returns every permission a subject holds, from roles and direct grants alike.

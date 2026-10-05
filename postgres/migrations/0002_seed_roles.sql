@@ -7,7 +7,7 @@ INSERT INTO roles (name, description) VALUES
     ('author', 'May create posts, and holds direct grants over the posts they create'),
     ('reader', 'Signed-in reader with no elevated permissions');
 
--- reader deliberately gets no rows: published posts are public, so nothing asks authz about them.
+-- reader's comment permission is in 0003, with the group that holds it.
 INSERT INTO role_permissions (role, action, resource_pattern) VALUES
     ('admin', '*', '*'),
     ('author', 'post.create', 'urn:content:post:*');

@@ -4,7 +4,7 @@ go 1.27.1
 
 require (
 	github.com/Masterminds/squirrel v1.5.4
-	github.com/applicaset/pkg v0.0.0-20261002000949-90941847c511
+	github.com/applicaset/pkg v0.0.0-20261005165400-6451a0aeeb10
 	github.com/stretchr/testify v1.12.1
 	modernc.org/sqlite v1.59.0
 )

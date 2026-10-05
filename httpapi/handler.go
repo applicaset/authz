@@ -50,7 +50,13 @@ func (h *Handler) can(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	allowed, err := h.service.Can(r.Context(), request.Subject, request.Action, request.Resource)
+	allowed, err := h.service.CanWithGroups(
+		r.Context(),
+		request.Subject,
+		request.Groups,
+		request.Action,
+		request.Resource,
+	)
 	if err != nil {
 		h.fail(w, r, "can", err)
 

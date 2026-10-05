@@ -17,6 +17,8 @@ const (
 	readerRef = "urn:auth:user:0199bf3c-7a1e-7c2b-9f10-000000000003"
 	postRef   = "urn:content:post:0199bf3c-7a1e-7c2b-9f10-0000000000aa"
 	otherPost = "urn:content:post:0199bf3c-7a1e-7c2b-9f10-0000000000bb"
+
+	authenticatedGroup = "urn:auth:group:authenticated"
 )
 
 func newService(t *testing.T) *authz.Service {
@@ -92,7 +94,7 @@ func TestAuthorRoleAllowsCreationOnly(t *testing.T) {
 	assert.False(t, allowed)
 }
 
-func TestReaderRoleGrantsNothing(t *testing.T) {
+func TestReaderRoleOnlyComments(t *testing.T) {
 	service := newService(t)
 	ctx := t.Context()
 
@@ -101,6 +103,52 @@ func TestReaderRoleGrantsNothing(t *testing.T) {
 	allowed, err := service.Can(ctx, readerRef, "post.read", postRef)
 	require.NoError(t, err)
 	assert.False(t, allowed)
+
+	allowed, err = service.Can(ctx, readerRef, "comment.create", postRef)
+	require.NoError(t, err)
+	assert.True(t, allowed)
+}
+
+// The seeded authenticated group is a reader, so every signed-in user may comment once the caller
+// names the group.
+func TestGroupsLendTheirPermissions(t *testing.T) {
+	service := newService(t)
+	ctx := t.Context()
+
+	allowed, err := service.Can(ctx, readerRef, "comment.create", postRef)
+	require.NoError(t, err)
+	assert.False(t, allowed, "no group named")
+
+	allowed, err = service.CanWithGroups(
+		ctx,
+		readerRef,
+		[]string{authenticatedGroup},
+		"comment.create",
+		postRef,
+	)
+	require.NoError(t, err)
+	assert.True(t, allowed, "through the group's role")
+
+	const editors = "urn:auth:group:editors"
+
+	require.NoError(t, service.Grant(ctx, editors, []string{"post.update"}, postRef))
+
+	allowed, err = service.CanWithGroups(ctx, readerRef, []string{editors}, "post.update", postRef)
+	require.NoError(t, err)
+	assert.True(t, allowed, "through the group's grant")
+
+	allowed, err = service.CanWithGroups(
+		ctx,
+		readerRef,
+		[]string{editors},
+		"post.update",
+		otherPost,
+	)
+	require.NoError(t, err)
+	assert.False(t, allowed)
+
+	_, err = service.CanWithGroups(ctx, readerRef, []string{"editors"}, "post.update", postRef)
+	require.Error(t, err, "a group is a ref")
 }
 
 // A direct grant is how a service expresses ownership of one resource without authz knowing what

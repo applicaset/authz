@@ -23,10 +23,20 @@ func New(baseURL string, opts httpx.ClientOptions) (*Client, error) {
 }
 
 func (c *Client) Can(ctx context.Context, subject, action, resource string) (bool, error) {
+	return c.CanWithGroups(ctx, subject, nil, action, resource)
+}
+
+func (c *Client) CanWithGroups(
+	ctx context.Context,
+	subject string,
+	groups []string,
+	action, resource string,
+) (bool, error) {
 	var response authzapi.CanResponse
 
 	err := c.call.Call(ctx, authzapi.PathCan, authzapi.CanRequest{
 		Subject:  subject,
+		Groups:   groups,
 		Action:   action,
 		Resource: resource,
 	}, &response)

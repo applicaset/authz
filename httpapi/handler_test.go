@@ -109,6 +109,22 @@ func TestCan(t *testing.T) {
 	assert.False(t, allowed.Allowed)
 }
 
+func TestCanThroughAGroup(t *testing.T) {
+	server := newServer(t)
+
+	status, body := post(t, server, authzapi.PathCan, authzapi.CanRequest{
+		Subject:  alice,
+		Groups:   []string{"urn:auth:group:authenticated"},
+		Action:   "comment.create",
+		Resource: "urn:content:post:1",
+	})
+	require.Equal(t, http.StatusOK, status)
+
+	var allowed authzapi.CanResponse
+	require.NoError(t, json.Unmarshal(body, &allowed))
+	assert.True(t, allowed.Allowed)
+}
+
 // An unknown role is the request's fault, not the system's. It used to reach the site untranslated
 // and render as an internal error.
 func TestAssignRoleRejectsAnUnknownRole(t *testing.T) {

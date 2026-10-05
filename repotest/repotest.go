@@ -114,7 +114,7 @@ func Run(t *testing.T, newRepositories New) {
 	t.Run("Role.ListPermissions is empty for no or unknown roles", func(t *testing.T) {
 		repos := newRepositories(t)
 
-		for _, roles := range [][]string{nil, {"reader"}, {"wizard"}} {
+		for _, roles := range [][]string{nil, {"wizard"}} {
 			patterns, err := repos.Role.ListPermissions(context.Background(), roles)
 			require.NoError(t, err)
 			assert.Empty(t, patterns)
