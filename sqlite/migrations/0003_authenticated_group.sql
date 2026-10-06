@@ -1,5 +1,6 @@
 -- Every signed-in user is in auth's authenticated group, and the group is a reader, so anyone
 -- signed in may comment on a post. Membership comes with each check: nothing here lists members.
+-- This gives reader its first row, despite 0002's comment. Applied migrations are never edited.
 INSERT INTO role_permissions (role, action, resource_pattern) VALUES
     ('reader', 'comment.create', 'urn:content:post:*');
 
